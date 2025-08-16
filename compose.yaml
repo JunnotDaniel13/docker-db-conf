@@ -1,119 +1,114 @@
 services:
   mysql:
-    image: mysql:latest
-    container_name: mysql-latest
-    restart: always # always restart
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
     environment:
-      MYSQL_DATABASE: "test_database" # name of database
-      MYSQL_USER: "junnot" # sample is the name of user
-      MYSQL_PASSWORD: "password" # password for sample user
-      MYSQL_ROOT_PASSWORD: "password" # password for root user
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
-      - "3306:3306" # host port 3306 is mapper to docker port 3306
-    expose:
-      - "3306"
+      - "3306:3306"
     volumes:
       - mysql-db:/var/lib/mysql
-    networks:
-      - shared_network
 
-  # phpmyadmin
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
+    image: phpmyadmin/phpmyadmin:5.2.2
     depends_on:
       - mysql
     restart: always
-    ports:
-      - "8010:80"
     environment:
       PMA_HOST: mysql
-      MYSQL_ROOT_PASSWORD: password
-    networks:
-      - shared_network
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
+      - "traefik.http.routers.phpmyadmin.entrypoints=web"
+      - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
 
-  # postgres
   postgres:
-    image: postgres:latest
-    container_name: postgres-latest
+    image: postgres:16
+    container_name: postgres
+    restart: always
     environment:
-      POSTGRES_DB: test_database
-      POSTGRES_USER: junnot
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks:
-      - shared_network
 
   pgadmin:
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:9.6
     container_name: pgadmin4_container
     restart: always
-    ports:
-      - "8011:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: user-name@domain-name.com
-      PGADMIN_DEFAULT_PASSWORD: strong-password
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     volumes:
       - pgadmin-data:/var/lib/pgadmin
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${PGADMIN_DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=web"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
 
   mongodb:
-    image: mongo:latest
-    container_name: mongodb-latest
+    image: mongo:7.0
+    container_name: mongodb
     restart: always
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
-    networks:
-      - shared_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh mongo/admin -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s  # Give MongoDB time to initialize
 
-  # Mongo Express for MongoDB
   mongo-express:
-    image: mongo-express:latest
-    container_name: mongo-express-latest
+    image: mongo-express:1.0
+    container_name: mongo-express
     restart: always
     depends_on:
-      - mongodb
-    ports:
-      - "8012:8081"
+      mongodb:
+        condition: service_healthy  # Wait for MongoDB to be ready
     environment:
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
-      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-      ME_CONFIG_MONGODB_ADMINPASSWORD: password
-      # Optional: Add basic auth to Mongo Express itself
-      # ME_CONFIG_BASICAUTH_USERNAME: admin
-      # ME_CONFIG_BASICAUTH_PASSWORD: password
-    networks:
-      - shared_network
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mongoexpress.rule=Host(`${MONGOEXPRESS_DOMAIN}`)"
+      - "traefik.http.routers.mongoexpress.entrypoints=web"
+      - "traefik.http.services.mongoexpress.loadbalancer.server.port=8081"
 
-  mailpit:
-    image: axllent/mailpit
-    container_name: mailpit
-    restart: unless-stopped
-    volumes:
-      - ./data:/data
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
     ports:
-      - 8025:8025
-      - 1025:1025
-    environment:
-      MP_MAX_MESSAGES: 5000
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_AUTH_ACCEPT_ANY: 1
-      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   mysql-db:
   pgdata:
   pgadmin-data:
   mongo-data:
-
-networks:
-  shared_network:
-    external: true
