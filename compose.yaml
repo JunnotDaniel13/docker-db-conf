@@ -1,8 +1,24 @@
 services:
+  mysql-8.0.43:
+    image: mysql:8.0.43
+    container_name: mysql-8.0.43
+    restart: always
+    command: --cte_max_recursion_depth=20000
+    environment:
+      # MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-db-8:/var/lib/mysql
+
   mysql:
     image: mysql:8.0
     container_name: mysql
     restart: always
+    command: --cte_max_recursion_depth=20000
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
@@ -22,6 +38,8 @@ services:
       PMA_HOST: mysql
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       UPLOAD_LIMIT: 1G
+    ports:
+      - "9080:80"  # Add direct port mapping
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
@@ -55,6 +73,8 @@ services:
       - "traefik.http.routers.pgadmin.rule=Host(`${PGADMIN_DOMAIN}`)"
       - "traefik.http.routers.pgadmin.entrypoints=web"
       - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+    ports:
+      - "9081:80"  # Add direct port mapping
 
   mongodb:
     image: mongo:7.0
@@ -110,6 +130,7 @@ services:
 
 volumes:
   mysql-db:
+  mysql-db-8:
   pgdata:
   pgadmin-data:
   mongo-data:
