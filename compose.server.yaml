@@ -4,6 +4,8 @@ services:
     container_name: mysql
     restart: always
     command: --cte_max_recursion_depth=20000
+    networks:
+      - proxy
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
@@ -16,9 +18,12 @@ services:
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin:5.2.2
+    container_name: phpmyadmin
     depends_on:
       - mysql
     restart: always
+    networks:
+      - proxy
     environment:
       PMA_HOST: mysql
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -27,14 +32,20 @@ services:
       - "9080:80"  # Add direct port mapping
     labels:
       - "traefik.enable=true"
+      # ROUTING
       - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
-      - "traefik.http.routers.phpmyadmin.entrypoints=web"
+      - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
+      - "traefik.http.routers.phpmyadmin.tls.certresolver=myresolver"
       - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
+      # SECURITY
+      - "traefik.http.routers.phpmyadmin.middlewares=sec-chain@file"
 
   postgres:
     image: postgres:16
     container_name: postgres
     restart: always
+    networks:
+      - proxy
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -46,30 +57,40 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:9.6
-    container_name: pgadmin4_container
+    container_name: pgadmin4
     restart: always
+    ports:
+      - "9081:80"
+    networks:
+      - proxy
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      # This is required to disable restricted mode inside Docker
+      PGADMIN_LISTEN_ADDRESS: "0.0.0.0"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
     labels:
       - "traefik.enable=true"
+      # ROUTING
       - "traefik.http.routers.pgadmin.rule=Host(`${PGADMIN_DOMAIN}`)"
-      - "traefik.http.routers.pgadmin.entrypoints=web"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls.certresolver=myresolver"
       - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
-    ports:
-      - "9081:80"  # Add direct port mapping
+      # SECURITY
+      - "traefik.http.routers.pgadmin.middlewares=sec-chain@file"
 
   mongodb:
     image: mongo:8.0
     container_name: mongodb
     restart: always
+    ports:
+      - "27017:27017"
+    networks:
+      - proxy
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-    ports:
-      - "27017:27017"
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -77,15 +98,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 40s  # Give MongoDB time to initialize
+      start_period: 40s
 
   mongo-express:
     image: mongo-express:1.0.2-20-alpine3.19
     container_name: mongo-express
     restart: always
+    networks:
+      - proxy
     depends_on:
       mongodb:
-        condition: service_healthy  # Wait for MongoDB to be ready
+        condition: service_healthy
     environment:
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
@@ -94,12 +117,20 @@ services:
       ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD}
     labels:
       - "traefik.enable=true"
+      # ROUTING
       - "traefik.http.routers.mongoexpress.rule=Host(`${MONGOEXPRESS_DOMAIN}`)"
-      - "traefik.http.routers.mongoexpress.entrypoints=web"
+      - "traefik.http.routers.mongoexpress.entrypoints=websecure"
+      - "traefik.http.routers.mongoexpress.tls.certresolver=myresolver"
       - "traefik.http.services.mongoexpress.loadbalancer.server.port=8081"
+      # SECURITY
+      - "traefik.http.routers.mongoexpress.middlewares=sec-chain@file"
 
 volumes:
   mysql-db:
   pgdata:
   pgadmin-data:
   mongo-data:
+
+networks:
+  proxy:
+    external: true
